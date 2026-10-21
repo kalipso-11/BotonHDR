@@ -1,0 +1,22 @@
+[package]
+name = "botonhdr"
+version = "2.0.0"
+edition = "2021"
+description = "Botón HDR/SDR: gadget de escritorio al fondo + icono en la bandeja del sistema"
+
+[[bin]]
+name = "BotonHDR"
+path = "src/main.rs"
+
+# Sin crates de Windows: toda la FFI es cruda en src/win.rs (build
+# rápido y una sola fuente de verdad de la ABI). Solo serde para la config.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"

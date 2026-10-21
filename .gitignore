@@ -1,0 +1,8 @@
+/target
+
+# Log de sesiones de desarrollo (uso interno, no se comparte):
+notas.md
+
+# Específicos de esta máquina (no se comparten):
+/mingw
+/.cargo
