@@ -49,6 +49,14 @@ the local mingw toolchain (retcomm/cmake-clang) does not ship
 `libgcc.a`/`libgcc_eh.a`, so `.cargo/config.toml` points to that directory
 (with an **absolute** path — if you move the project, update it).
 
+### Installer
+A Windows installer (a single `.exe` built with Inno Setup) installs the
+program to `C:\Program Files\BotonHDR`, creates a Start menu entry, and offers
+an optional desktop shortcut plus a "run now" checkbox. The uninstaller is
+registered in "Add or remove programs". Script: `installer/botonhdr.iss`
+(requires Inno Setup 6 to compile); the built installer goes to
+`installer/output/`.
+
 ## How the HDR toggle works
 1. Reads the active monitor's state from the registry
    (`HKLM\SYSTEM\CCS\Control\GraphicsDrivers\MonitorDataStore\{key}\HDREnabled`,
@@ -80,7 +88,7 @@ the local mingw toolchain (retcomm/cmake-clang) does not ship
 
 ---
 
-# BotonHDR2 — Botón HDR/SDR de escritorio (Rust)
+# BotonHDR — Botón HDR/SDR de escritorio (Rust)
 
 Gadget de escritorio al fondo + icono en la bandeja de sistema que muestra el estado
 **HDR/SDR** del monitor principal y permite alternarlo con un click.
@@ -130,6 +138,14 @@ Requiere el target `x86_64-pc-windows-gnu` de Rust. Ojo con el shim de
 `mingw/`: el toolchain mingw de la máquina (retcomm/cmake-clang) no trae
 `libgcc.a`/`libgcc_eh.a`, por eso `.cargo/config.toml` apunta a ese directorio
 (con ruta **absoluta** — si movés el proyecto, actualizala).
+
+### Instalador
+Un instalador de Windows (un único `.exe` hecho con Inno Setup) instala el
+programa en `C:\Program Files\BotonHDR`, crea la entrada en el menú de inicio y
+ofrece un acceso directo opcional en el escritorio y un checkbox "Ejecutar
+ahora". El desinstalador queda registrado en "Agregar o quitar programas".
+Script: `installer/botonhdr.iss` (requiere Inno Setup 6 para compilar); el
+instalador compilado queda en `installer/output/`.
 
 ## Cómo alterna HDR
 1. Lee el estado del monitor activo desde el registro

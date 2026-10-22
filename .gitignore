@@ -1,5 +1,8 @@
 /target
 
+# Output de compilación del instalador:
+/installer/output
+
 # Log de sesiones de desarrollo (uso interno, no se comparte):
 notas.md
 
