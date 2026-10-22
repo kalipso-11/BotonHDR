@@ -15,6 +15,9 @@ pub struct Cfg {
     pub opacity: i32,
     pub color: String,
     pub size: String,
+    /// Idioma de la interfaz: "en" (default: instalación nueva) | "es".
+    /// Solo afecta los textos mostrados, nunca los valores de config.
+    pub language: String,
     pub position: Option<[i64; 2]>,
     /// Estado bloqueado ("HDR"/"SDR") mientras está activo el menú
     /// "Bloquear SDR/HDR" (None = sin bloqueo).
@@ -33,6 +36,7 @@ impl Default for Cfg {
             opacity: 100, // 20 / 40 / 60 / 80 / 100
             color: "#22d3ee".into(),
             size: "Grande".into(), // Chico / Medio / Grande / Enorme
+            language: "en".into(), // instalación nueva en inglés
             position: None,
             hdr_lock: None,
             migrated_v2: None,
@@ -100,6 +104,11 @@ pub fn load() -> Cfg {
     }
     if let Some(v) = obj.get("size").and_then(|v| v.as_str()) {
         data.size = v.to_string();
+    }
+    if let Some(v) = obj.get("language").and_then(|v| v.as_str()) {
+        if v == "es" || v == "en" {
+            data.language = v.to_string();
+        }
     }
     if let Some(arr) = obj.get("position").and_then(|v| v.as_array()) {
         if arr.len() == 2 {

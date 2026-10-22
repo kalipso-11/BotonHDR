@@ -10,6 +10,7 @@
 //!   estado actual) y se aplica el comando DESPUÉS de soltar el lock.
 
 use crate::draw;
+use crate::lang;
 use crate::win as w;
 use std::ffi::c_void;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -31,6 +32,7 @@ pub const IDM_COLOR_BASE: usize = 400; // 401..407
 pub const IDM_SIZE_BASE: usize = 500; // 501..504
 pub const IDM_AUTOSTART: usize = 204;
 pub const IDM_QUIT: usize = 206;
+pub const IDM_LANG_BASE: usize = 600; // 601=es, 602=en
 
 const OPACITIES: [i32; 5] = [20, 40, 60, 80, 100];
 
@@ -291,7 +293,7 @@ pub fn native_tip_text(state: &str) -> &'static str {
 pub fn open_menu(hwnd_ctrl: *mut c_void) {
     crate::slog(31, "menu_begin");
     // 1) Estado para los checks (se lee y se suelta al instante).
-    let (state, color, size, opacity, gadget_visible, auto, locked, lock_state) = {
+    let (state, color, size, opacity, gadget_visible, auto, locked, lock_state, language) = {
         let app = crate::APP.lock().unwrap();
         let Some(a) = app.as_ref() else {
             return;
@@ -305,23 +307,29 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
             crate::autostart::is_enabled(),
             a.locked,
             a.lock_state,
+            a.cfg.language.clone(),
         )
     };
 
     // 2) Menú reconstruido (los checks reflejan el estado actual).
     let menu = unsafe { w::CreatePopupMenu() };
     unsafe {
-        let status = w::utf16(&format!("Estado actual: {state}"));
+        let status = w::utf16(&format!(
+            "{} {state}",
+            lang::t(&language, "Estado actual:", "Current state:")
+        ));
         w::AppendMenuW(menu, w::MF_STRING | w::MF_GRAYED, IDM_STATUS, status.as_ptr());
         let toggle = w::utf16(&format!(
-            "Cambiar a {}",
+            "{} {}",
+            lang::t(&language, "Cambiar a", "Switch to"),
             if state == "HDR" { "SDR" } else { "HDR" }
         ));
         w::AppendMenuW(menu, w::MF_STRING, IDM_TOGGLE, toggle.as_ptr());
         // "Bloquear SDR/HDR": con tilde mientras el estado actual está
         // bloqueado (impide que cualquier app/cable cambie el estado).
         let lock = w::utf16(&format!(
-            "Bloquear {}",
+            "{} {}",
+            lang::t(&language, "Bloquear", "Lock"),
             if locked { lock_state } else { state }
         ));
         w::AppendMenuW(
@@ -331,7 +339,11 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
             lock.as_ptr(),
         );
         w::AppendMenuW(menu, w::MF_SEPARATOR, 0, std::ptr::null());
-        let gadget = w::utf16("Gadget del escritorio");
+        let gadget = w::utf16(lang::t(
+            &language,
+            "Gadget del escritorio",
+            "Desktop gadget",
+        ));
         w::AppendMenuW(
             menu,
             w::MF_STRING | if gadget_visible { w::MF_CHECKED } else { 0 },
@@ -349,12 +361,12 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
                 label.as_ptr(),
             );
         }
-        let title = w::utf16("Opacidad");
+        let title = w::utf16(lang::t(&language, "Opacidad", "Opacity"));
         w::AppendMenuW(menu, w::MF_POPUP, sub_op as usize, title.as_ptr());
 
         let sub_color = w::CreatePopupMenu();
-        for (i, (name, hexv)) in draw::COLORS.iter().enumerate() {
-            let label = w::utf16(name);
+        for (i, (_name, hexv)) in draw::COLORS.iter().enumerate() {
+            let label = w::utf16(lang::color_name(hexv, &language));
             w::AppendMenuW(
                 sub_color,
                 w::MF_STRING | if *hexv == color { w::MF_CHECKED } else { 0 },
@@ -362,12 +374,12 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
                 label.as_ptr(),
             );
         }
-        let title = w::utf16("Color");
+        let title = w::utf16(lang::t(&language, "Color", "Color"));
         w::AppendMenuW(menu, w::MF_POPUP, sub_color as usize, title.as_ptr());
 
         let sub_size = w::CreatePopupMenu();
         for (i, (name, _)) in draw::SIZES.iter().enumerate() {
-            let label = w::utf16(name);
+            let label = w::utf16(lang::size_name(name, &language));
             w::AppendMenuW(
                 sub_size,
                 w::MF_STRING | if *name == size { w::MF_CHECKED } else { 0 },
@@ -375,10 +387,29 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
                 label.as_ptr(),
             );
         }
-        let title = w::utf16("Tamaño");
+        let title = w::utf16(lang::t(&language, "Tamaño", "Size"));
         w::AppendMenuW(menu, w::MF_POPUP, sub_size as usize, title.as_ptr());
 
-        let auto_lbl = w::utf16("Iniciar con Windows");
+        // Idioma: aplica al instante (el menú se reconstruye en cada
+        // apertura) y persiste en config.json.
+        let sub_lang = w::CreatePopupMenu();
+        w::AppendMenuW(
+            sub_lang,
+            w::MF_STRING | if language == "es" { w::MF_CHECKED } else { 0 },
+            IDM_LANG_BASE + 1,
+            w::utf16("Español").as_ptr(),
+        );
+        w::AppendMenuW(
+            sub_lang,
+            w::MF_STRING | if language != "es" { w::MF_CHECKED } else { 0 },
+            IDM_LANG_BASE + 2,
+            w::utf16("English").as_ptr(),
+        );
+        let title = w::utf16(lang::t(&language, "Idioma", "Language"));
+        w::AppendMenuW(menu, w::MF_POPUP, sub_lang as usize, title.as_ptr());
+
+        let auto_lbl =
+            w::utf16(lang::t(&language, "Iniciar con Windows", "Start with Windows"));
         w::AppendMenuW(
             menu,
             w::MF_STRING | if auto { w::MF_CHECKED } else { 0 },
@@ -386,7 +417,7 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
             auto_lbl.as_ptr(),
         );
         w::AppendMenuW(menu, w::MF_SEPARATOR, 0, std::ptr::null());
-        let quit = w::utf16("Salir");
+        let quit = w::utf16(lang::t(&language, "Salir", "Exit"));
         w::AppendMenuW(menu, w::MF_STRING, IDM_QUIT, quit.as_ptr());
     }
 
@@ -485,8 +516,26 @@ pub fn open_menu(hwnd_ctrl: *mut c_void) {
             if !ok {
                 let mut app = crate::APP.lock().unwrap();
                 if let Some(a) = app.as_mut() {
-                    a.tray.balloon("Botón HDR", "No se pudo cambiar la opción de arranque.");
+                    a.tray.balloon(
+                        lang::t(&a.cfg.language, "Botón HDR", "HDR Button"),
+                        lang::t(
+                            &a.cfg.language,
+                            "No se pudo cambiar la opción de arranque.",
+                            "Could not change the startup option.",
+                        ),
+                    );
                 }
+            }
+        }
+        c if (IDM_LANG_BASE + 1..=IDM_LANG_BASE + 2).contains(&c) => {
+            let new = if c == IDM_LANG_BASE + 1 { "es" } else { "en" };
+            let mut app = crate::APP.lock().unwrap();
+            let Some(a) = app.as_mut() else {
+                return;
+            };
+            if a.cfg.language != new {
+                a.cfg.language = new.to_string();
+                crate::config::save(&a.cfg);
             }
         }
         IDM_QUIT => unsafe { w::PostQuitMessage(0) },

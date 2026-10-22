@@ -3,8 +3,8 @@
 //! - WS_POPUP con WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED |
 //!   WS_EX_TRANSPARENT (click-through): no roba el foco ni los clicks.
 //! - Sin WNDPROC propio: `DefWindowProcW` basta (no hay mensajes propios).
-//! - Línea 1 "HDR On"/"HDR Off" + línea 2 "click derecho para configurar"
-//!   (ya definidas en `draw::render_tip`).
+//! - Línea 1 "HDR On"/"HDR Off" + línea 2 localizada por `Cfg.language`
+//!   (ya definida en `draw::render_tip` vía `lang::tip_line2`).
 //! - Posición: centrado bajo el icono, clamp contra el monitor COMPLETO
 //!   (la bandeja queda bajo el work area); si no cabe abajo, se voltea
 //!   hacia arriba.
@@ -99,17 +99,18 @@ fn tip_worker(hwnd: *mut c_void) {
                     a.tip.dark,
                     a.tip.visible,
                     a.tip.pending_icon,
+                    a.cfg.language.clone(),
                 )
             })
         };
-        let Some((state, dark, visible, icon)) = snap else {
+        let Some((state, dark, visible, icon, lang)) = snap else {
             break; // la app ya no existe (cleanup)
         };
         let Some(icon) = icon else {
             continue;
         };
         // 3) Layout + posición (clamp contra el monitor COMPLETO).
-        let (mut bw, mut bh) = draw::tip_layout(scale, &state);
+        let (mut bw, mut bh) = draw::tip_layout(scale, &state, &lang);
         if bw < 2 || bh < 2 {
             continue;
         }
@@ -156,7 +157,7 @@ fn tip_worker(hwnd: *mut c_void) {
         let s2 = if dpi > 0 { dpi as f32 / 96.0 } else { scale };
         if (s2 - scale).abs() > 0.01 {
             scale = s2;
-            let (w2, h2) = draw::tip_layout(scale, &state);
+            let (w2, h2) = draw::tip_layout(scale, &state, &lang);
             if w2 > 1 && h2 > 1 {
                 (bw, bh) = (w2, h2);
                 x = icon.left + ((icon.right - icon.left - bw) / 2).max(0);
@@ -181,7 +182,7 @@ fn tip_worker(hwnd: *mut c_void) {
         let Some(b) = buf.as_mut() else {
             continue;
         };
-        if !draw::render_tip(b, scale, &state, dark) {
+        if !draw::render_tip(b, scale, &state, dark, &lang) {
             continue;
         }
         // 6) ULW con DC fuente (bitmap SELECCIONADO en DC compatible).

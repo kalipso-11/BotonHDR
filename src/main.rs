@@ -27,6 +27,7 @@ mod draw;
 mod gadget;
 mod gamebar;
 mod hdr;
+mod lang;
 mod singleinstance;
 mod tray;
 mod traytip;
@@ -177,7 +178,7 @@ pub fn request_toggle() {
                 win::SetTimer(a.hwnd_ctrl, T_WARN, 3500, std::ptr::null());
             }
             if !a.gadget.visible {
-                a.tray.balloon("Botón HDR", &msg);
+                a.tray.balloon(lang::t(&a.cfg.language, "Botón HDR", "HDR Button"), &msg);
             }
             return;
         }
@@ -266,7 +267,7 @@ fn on_hotkey() {
         win::SetTimer(a.hwnd_ctrl, T_WARN, 3500, std::ptr::null());
     }
     if !a.gadget.visible {
-        a.tray.balloon("Botón HDR", &msg);
+        a.tray.balloon(lang::t(&a.cfg.language, "Botón HDR", "HDR Button"), &msg);
     }
 }
 
@@ -809,7 +810,8 @@ fn on_toggle_done(ok: bool, target_hdr: bool) {
             win::SetTimer(a.hwnd_ctrl, T_WARN, 3500, std::ptr::null());
         }
         if !a.gadget.visible {
-            a.tray.balloon("Botón HDR", "HDR No compatible");
+            a.tray
+                .balloon(lang::t(&a.cfg.language, "Botón HDR", "HDR Button"), "HDR No compatible");
         }
     }
 }

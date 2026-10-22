@@ -24,7 +24,9 @@ state of the main monitor and lets you toggle it with a click.
   - **Left click**: toggles HDR ↔ SDR.
   - **Tooltip**: "HDR On" / "HDR Off" + "right click to configure".
   - **Right click**: menu with state, toggle, show/hide gadget, opacity, color,
-    size, **Lock SDR/HDR**, launch at Windows startup and quit.
+    size, **Lock SDR/HDR**, **Language**, launch at Windows startup and quit.
+- **Interface language**: English (default on new installs) or Spanish — pick
+  it in the right-click menu → **Language**; applies instantly and is saved.
 - **State lock**: "Lock SDR" (when in SDR) or "Lock HDR" (when in HDR) prevents
   the state from changing to anything else — from the app, the Windows shortcut
   or any other program. Visible padlock on the gadget and in the tray.
@@ -86,6 +88,7 @@ registered in "Add or remove programs". Script: `installer/botonhdr.iss`
 | `src/hdr.rs` | HDR state detection/toggle (registry + Win+Alt+B) |
 | `src/gamebar.rs` | Xbox Game Bar notification suppression |
 | `src/config.rs` | Preferences persistence (JSON, serde) |
+| `src/lang.rs` | Interface strings EN/ES (menu, colors, sizes, tooltip) |
 | `src/autostart.rs` | "Launch at Windows startup" (HKCU Run) |
 | `src/singleinstance.rs` | Single instance |
 | `mingw/` | `libgcc.a`/`libgcc_eh.a` shim for the linker (see `.cargo/config.toml`) |
@@ -114,7 +117,11 @@ Gadget de escritorio al fondo + icono en la bandeja de sistema que muestra el es
   - **Click izquierdo**: alterna HDR ↔ SDR.
   - **Tooltip**: "HDR On" / "HDR Off" + "click derecho para configurar".
   - **Click derecho**: menú con estado, cambiar, mostrar/ocultar gadget,
-    opacidad, color, tamaño, **Bloquear SDR/HDR**, iniciar con Windows y salir.
+    opacidad, color, tamaño, **Bloquear SDR/HDR**, **Idioma**, iniciar con
+    Windows y salir.
+- **Idioma de la interfaz**: inglés (default en instalaciones nuevas) o
+  español — se elige en el click derecho → **Idioma**; aplica al instante y
+  persiste.
 - **Bloqueo de estado**: "Bloquear SDR" (en SDR) o "Bloquear HDR" (en HDR)
   impide cambiar a cualquier otro estado — desde la app, el atajo de Windows o
   cualquier otro programa. Candado visible en el gadget y en la bandeja.
@@ -176,6 +183,7 @@ instalador compilado queda en `installer/output/`.
 | `src/hdr.rs` | Detección/cambio de estado HDR (registro + Win+Alt+B) |
 | `src/gamebar.rs` | Supresión de la notificación de Xbox Game Bar |
 | `src/config.rs` | Persistencia de preferencias (JSON, serde) |
+| `src/lang.rs` | Textos de la interfaz EN/ES (menú, colores, tamaños, tooltip) |
 | `src/autostart.rs` | "Iniciar con Windows" (HKCU Run) |
 | `src/singleinstance.rs` | Instancia única |
 | `mingw/` | Shim de `libgcc.a`/`libgcc_eh.a` para el linker (ver `.cargo/config.toml`) |

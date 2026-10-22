@@ -1182,8 +1182,6 @@ pub fn render_gadget(
 // Tooltip de la bandeja (2 líneas, esquinas redondeadas)
 // ---------------------------------------------------------------------------
 
-const TIP_L2: &str = "click derecho para configurar";
-
 /// Colores del tip según el tema de Windows (AppsUseLightTheme).
 pub fn tip_colors(dark: bool) -> (Color, Color, Color, Color) {
     if dark {
@@ -1205,10 +1203,14 @@ pub fn tip_colors(dark: bool) -> (Color, Color, Color, Color) {
 
 /// w×h físicos del tip para `scale` (mismos márgenes que la versión Qt:
 /// 12/7/13/8, espaciado 3, borde 1 px, radios 5 px).
-pub fn tip_layout(scale: f32, state: &str) -> (i32, i32) {
+pub fn tip_layout(scale: f32, state: &str, lang: &str) -> (i32, i32) {
     let line1 = if state == "HDR" { "HDR On" } else { "HDR Off" };
     let (w1, h1) = text_size((15.0 * scale).round() as i32, true, line1);
-    let (w2, h2) = text_size((11.0 * scale).round() as i32, false, TIP_L2);
+    let (w2, h2) = text_size(
+        (11.0 * scale).round() as i32,
+        false,
+        crate::lang::tip_line2(lang),
+    );
     let cw = w1.max(w2).ceil() as i32;
     let ch = (h1.ceil() as i32) + ((3.0 * scale).round() as i32) + (h2.ceil() as i32);
     let w = cw + (12.0 * scale).round() as i32 + (13.0 * scale).round() as i32 + 2;
@@ -1217,7 +1219,7 @@ pub fn tip_layout(scale: f32, state: &str) -> (i32, i32) {
 }
 
 /// Dibuja el tip en `buf`.
-pub fn render_tip(buf: &mut Scanbuf, scale: f32, state: &str, dark: bool) -> bool {
+pub fn render_tip(buf: &mut Scanbuf, scale: f32, state: &str, dark: bool, lang: &str) -> bool {
     let w = buf.w;
     let h = buf.h;
     if w <= 0 || h <= 0 {
@@ -1276,7 +1278,7 @@ pub fn render_tip(buf: &mut Scanbuf, scale: f32, state: &str, dark: bool) -> boo
     if let Some(rt) = RasterText::new(px1, true, line1) {
         rt.blit_topleft(&dst, x0, y0, (fg.r, fg.g, fg.b));
         let y1 = y0 + rt.ink.h;
-        if let Some(rt2) = RasterText::new(px2, false, TIP_L2) {
+        if let Some(rt2) = RasterText::new(px2, false, crate::lang::tip_line2(lang)) {
             rt2.blit_topleft(&dst, x0, y1 + (3.0 * scale) as i32, (sub.r, sub.g, sub.b));
         }
     }
@@ -1566,9 +1568,9 @@ mod tests {
     /// El tip debe pintar ambas líneas (HDR Off + subtítulo).
     #[test]
     fn tip_texto_visible() {
-        let (w, h) = tip_layout(1.0, "SDR");
+        let (w, h) = tip_layout(1.0, "SDR", "es");
         let mut buf = Scanbuf::new(w, h).expect("scratch");
-        assert!(render_tip(&mut buf, 1.0, "SDR", true));
+        assert!(render_tip(&mut buf, 1.0, "SDR", true, "es"));
         let (mut fg, mut sub) = (0u32, 0u32);
         unsafe {
             for y in 0..h {
@@ -1688,9 +1690,9 @@ mod tests {
     /// El fondo del tip debe ser opaco (α=255) dentro de la forma.
     #[test]
     fn tip_fondo_opaco() {
-        let (w, h) = tip_layout(1.0, "SDR");
+        let (w, h) = tip_layout(1.0, "SDR", "es");
         let mut buf = Scanbuf::new(w, h).expect("scratch");
-        assert!(render_tip(&mut buf, 1.0, "SDR", true));
+        assert!(render_tip(&mut buf, 1.0, "SDR", true, "es"));
         let i = ((h / 2) as usize * w as usize + (w / 2) as usize) * 4;
         let (b, g, rr, a) = unsafe {
             (*buf.bits.add(i), *buf.bits.add(i + 1), *buf.bits.add(i + 2), *buf.bits.add(i + 3))
