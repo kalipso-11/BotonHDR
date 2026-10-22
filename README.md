@@ -1,4 +1,4 @@
-# BotonHDR2 — HDR/SDR desktop toggle (Rust)
+# BotonHDR — HDR/SDR desktop toggle (Rust)
 
 A desktop gadget in the background + a system tray icon that shows the **HDR/SDR**
 state of the main monitor and lets you toggle it with a click.
