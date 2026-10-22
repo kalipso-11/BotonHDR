@@ -3,6 +3,10 @@
 A desktop gadget in the background + a system tray icon that shows the **HDR/SDR**
 state of the main monitor and lets you toggle it with a click.
 
+<p align="center">
+  <img src="https://github.com/kalipso-11/BotonHDR/raw/main/docs/captura.jpg" alt="BotonHDR: desktop gadget and tray icon" />
+</p>
+
 ## Features
 - **Desktop gadget**: a stylized octagon with a halo that shows `HDR` or `SDR`.
   - Always **behind the windows** (only visible when looking at the desktop).
