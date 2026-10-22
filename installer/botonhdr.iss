@@ -12,6 +12,9 @@
 ;  - Menú Inicio: carpeta "BotonHDR" + entrada (por defecto).
 ;  - Página final: checkbox "Ejecutar BotonHDR" (marcado por defecto).
 ;  - Desinstalador registrado en "Agregar o quitar programas".
+;  - Si la app esta corriendo, el desinstalador la cierra antes de borrar
+;    nada ([Code] + TaskKill en usAppMutexCheck) — no deja exe/carpeta
+;    huérfanos.
 ;  - NO borra config ni logs: viven en %APPDATA%\BotonHDR2 (se conservan).
 ; =====================================================================
 
@@ -63,3 +66,27 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Ejecutar {#MyAppName}"; Flags: 
 
 ; Nota: sin [UninstallDelete] a propósito — la config y los logs viven en
 ; %APPDATA%\BotonHDR2 y deben conservarse al desinstalar.
+
+[Code]
+// Si BotonHDR esta en ejecucion, cerramos el proceso ANTES de que el
+// desinstalador borre archivos (usAppMutexCheck es el primer paso).
+// Con esto, desinstalar con la app abierta ya no deja .exe/carpeta
+// huérfanos.
+
+function Sleep(Milliseconds: LongWord): LongWord;
+external 'Sleep@kernel32.dll stdcall';
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usAppMutexCheck then
+  begin
+    // Cierra BotonHDR si esta corriendo (Inno no trae TaskKill; usamos el
+    // taskkill.exe del sistema). Exit code 0 = cerro proceso(s), 128 = no
+    // estaba corriendo; en ambos casos seguimos con la desinstalacion.
+    if Exec('taskkill.exe', '/F /IM BotonHDR.exe', '', SW_HIDE,
+        ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+      Sleep(2000);  // espera a que el SO libere el .exe
+  end;
+end;
