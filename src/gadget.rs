@@ -14,7 +14,7 @@
 use crate::draw;
 use crate::win as w;
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -156,21 +156,56 @@ static GADGET_STOP: AtomicBool = AtomicBool::new(false);
 /// el worker lo ejecuta en su próximo ciclo (SetWindowPos fuera del
 /// hilo de mensajes; ver AppHangB1, WER 2026-10-21).
 static GEO_CHECK: AtomicBool = AtomicBool::new(false);
+/// Escala autoritativa opcional para el chequeo (GetDpiForMonitor del
+/// primario en el momento del cambio): tras un hotplug, GetDpiForWindow
+/// puede quedarse con la escala vieja hasta que Windows entrega
+/// WM_DPICHANGED (segundos después); el hint corrige el paso 3.5 al
+/// instante.
+static GEO_HINT: Mutex<Option<f32>> = Mutex::new(None);
 
 /// Pide al worker de paint un chequeo de geometría completo (tamaño
 /// canónico + off-screen): se invoca tras WM_DISPLAYCHANGE. El worker
 /// es el único que hace SetWindowPos sobre esta ventana: durante una
 /// reconfiguración de displays el hilo de mensajes puede bloquearse en
-/// el stack de ventanas (AppHangB1, WER 2026-10-21 10:56).
-pub fn request_geometry_check() {
+/// el stack de ventanas (AppHangB1, WER 2026-10-21 10:56). `hint` es la
+/// escala del primario nuevo leída en vivo (GetDpiForMonitor); si viene,
+/// el worker la usa en lugar de GetDpiForWindow (que puede estar atrasada).
+pub fn request_geometry_check(hint: Option<f32>) {
+    if let Some(h) = hint {
+        *GEO_HINT.lock().unwrap() = Some(h);
+    }
     GEO_CHECK.store(true, Ordering::Relaxed);
     mark_dirty();
 }
+
+/// Reposición completa pedida por `on_display_change` (cambio de monitor
+/// primario): el worker mueve la ventana a (x, y) con tamaño (w, h); `scale`
+/// es la escala FINAL resuelta por `resolve_display_state` (muestra GDI
+/// corregida por WM_DPICHANGED/DWM — v7: la escala que pasa al worker
+/// manda sobre la que el worker lea solo de GDI/DWM en ese instante).
+static GADGET_MOVE_TO: Mutex<Option<(i32, i32, i32, i32, f32)>> = Mutex::new(None);
 
 /// Marca sucio: el worker de paint lo toma (render + ULW).
 fn mark_dirty() {
     *GADGET_DIRTY.lock().unwrap() = true;
     GADGET_CV.notify_one();
+}
+
+/// Pide al worker de paint una reposición completa (nunca en el hilo de
+/// mensajes en plena reconfiguración; ver AppHangB1, WER 2026-10-21):
+/// se invoca cuando el monitor primario cambia y el gadget vive en otro.
+pub fn request_reposition(x: i32, y: i32, w: i32, h: i32, scale: f32) {
+    *GADGET_MOVE_TO.lock().unwrap() = Some((x, y, w, h, scale));
+    mark_dirty();
+}
+
+/// Descarta una reposición en cola (v6): con un nuevo WM_DISPLAYCHANGE la
+/// petición anterior puede estar calculada contra el mundo VIEJO (se
+/// observó en el log que un move queueado antes del swap se ejecutaba
+/// después, sobre el monitor nuevo). El ajuste nuevo lo re-encola si hace
+/// falta.
+pub fn take_pending_move() -> Option<(i32, i32, i32, i32, f32)> {
+    GADGET_MOVE_TO.lock().unwrap().take()
 }
 
 /// Worker de paint: renderiza el gadget + UpdateLayeredWindow.
@@ -221,7 +256,7 @@ fn paint_worker(hwnd: *mut c_void) {
             break;
         }
         // 2) Geometría + DPI del monitor donde vive (sin APP).
-        let (mut wr, scale) = unsafe {
+        let (mut wr, mut scale) = unsafe {
             let mut wr: w::RECT = std::mem::zeroed();
             if w::GetWindowRect(hwnd, &mut wr) == 0 {
                 continue;
@@ -229,9 +264,53 @@ fn paint_worker(hwnd: *mut c_void) {
             let dpi = w::GetDpiForWindow(hwnd);
             (wr, if dpi > 0 { dpi as f32 / 96.0 } else { 1.0 })
         };
+        // Escala autoritativa del último cambio de display (GetDpiForMonitor
+        // del primario): tras un hotplug, GetDpiForWindow puede quedarse
+        // con la escala vieja hasta que llegue WM_DPICHANGED.
+        if let Some(h) = GEO_HINT.lock().unwrap().take() {
+            scale = h.max(0.1);
+        }
         let (mut cw, mut ch) = (wr.right - wr.left, wr.bottom - wr.top);
         if cw < 2 || ch < 2 {
             continue;
+        }
+        // 2.5) Reposición completa pendiente (cambio de monitor primario):
+        //     SetWindowPos a la posición/tamaño ya calculados por
+        //     on_display_change, con la escala FINAL resuelta PASADA como
+        //     argumento (v7: muestra GDI corregida por WM/DWM; con la de
+        //     GDI cruda el worker achicaba el gadget, log 2026-10-27). No
+        //     se re-lee GetDpiForWindow aquí: tras un hotplug puede
+        //     devolver la escala vieja hasta el WM_DPICHANGED y el paso
+        //     3.5 revertiría el tamaño recién puesto.
+        //     v6.1: el guard se suelta ANTES del GDI. Con `if let` sobre
+        //     `lock().take()`, Rust extiende la vida del guard a TODO el
+        //     bloque (SetWindowPos + anchor_to_bottom + slog): en plena
+        //     reconfiguración de displays esas llamadas pueden bloquearse
+        //     y el WM_DISPLAYCHANGE del hilo de UI (take_pending_move)
+        //     se deadlockeaba → message loop muerto, bandeja/menú
+        //     colgados y sin más applies (log 2026-10-23: step=43 a
+        //     t=…982555 y silencio; solo hb de otro hilo seguía).
+        let move_req = GADGET_MOVE_TO.lock().unwrap().take();
+        if let Some((mx, my, mw, mh, msc)) = move_req {
+            unsafe {
+                w::SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    mx,
+                    my,
+                    mw,
+                    mh,
+                    w::SWP_NOZORDER | w::SWP_NOACTIVATE,
+                );
+            }
+            wr = w::RECT { left: mx, top: my, right: mx + mw, bottom: my + mh };
+            (cw, ch) = (mw, mh);
+            scale = msc.max(0.1);
+            anchor_to_bottom(hwnd);
+            crate::slog(
+                48,
+                &format!("gadget_repositioned ({},{}) {}x{} (esc={})", mx, my, mw, mh, scale),
+            );
         }
         // 3) Snapshot de parámetros + sync de escala (APP breve, sin GDI).
         let snap = {
@@ -315,11 +394,25 @@ fn paint_worker(hwnd: *mut c_void) {
                 || wr.top >= vy0 + vh;
             if off {
                 let (gw, gh) = (wr.right - wr.left, wr.bottom - wr.top);
-                let (nx, ny) = if let Some(av) = crate::primary_work_area() {
+                let (mut nx, mut ny) = if let Some(av) = crate::primary_work_area() {
                     (av.right - gw - 24, av.bottom - gh - 24)
                 } else {
                     (0, 0)
                 };
+                // Clamp a la pantalla VIRTUAL: en plena reconfiguración el
+                // work area primario puede estar stale y dejarlo afuera.
+                if nx < vx0 {
+                    nx = vx0;
+                }
+                if ny < vy0 {
+                    ny = vy0;
+                }
+                if nx + gw > vx0 + vw {
+                    nx = (vx0 + vw - gw - 8).max(vx0);
+                }
+                if ny + gh > vy0 + vh {
+                    ny = (vy0 + vh - gh - 8).max(vy0);
+                }
                 let old = (wr.left, wr.top);
                 unsafe {
                     w::SetWindowPos(
@@ -338,6 +431,50 @@ fn paint_worker(hwnd: *mut c_void) {
                     44,
                     &format!("gadget_replaced ({},{}) -> ({},{})", old.0, old.1, nx, ny),
                 );
+                // El gadget quedó en el primario: actualizar memoria por
+                // monitor (posición relativa a la sup-izq de ese monitor).
+                // En plena reconfiguración EnumDisplayDevices/GetMonitorInfo
+                // pueden fallar un instante (GDI saturado): retry corto.
+                let mut prim = crate::primary_monitor();
+                if prim.is_none() {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    prim = crate::primary_monitor();
+                }
+                // Puerta de escala: no corromper la memoria por monitor con
+                // una muestra de GDI STALE (id/escala del monitor viejo que
+                // contradice un WM_DPICHANGED fresco ≤20 s). v6: además se
+                // SKIPEA el propio reemplazo off-screen cuando GDI está
+                // stale: GetSystemMetrics puede seguir reportando la
+                // pantalla virtual vieja unos segundos tras el swap y
+                // marcar "off" a un gadget que en el monitor nuevo SÍ está
+                // en pantalla (el ajuste de display ya lo colocó); moverlo
+                // a la esquina con métricas stale lo dejaba mal ubicado.
+                let wm = wm_dpi_fresh(20_000);
+                let stale_gdi = match (&wm, &prim) {
+                    (Some(w), Some(p)) => (p.scale - w).abs() > 0.01,
+                    _ => false,
+                };
+                if stale_gdi {
+                    crate::slog(47, "gadget_replaced_skip_stale_gdi");
+                } else if let Some(prim) = prim {
+                    if let Ok(mut app) = crate::APP.lock() {
+                        if let Some(a) = app.as_mut() {
+                            a.monitor_id = prim.id.clone();
+                            // Escala fresca primero (DWM); la de GDI solo
+                            // si no hay WM fresco (aunque coincida con la de
+                            // GDI, la de DWM es la autoritativa).
+                            let s = wm.unwrap_or(prim.scale).max(0.1);
+                            a.cfg.monitor_mem.insert(
+                                crate::mem_key(&prim.id, s),
+                                [
+                                    ((nx - prim.mon.left) as f32 / s).round() as i64,
+                                    ((ny - prim.mon.top) as f32 / s).round() as i64,
+                                ],
+                            );
+                            crate::config::save(&a.cfg);
+                        }
+                    }
+                }
             }
         }
         // 4) Clave de contenido (incluye la opacidad): ¿cambió algo
@@ -623,18 +760,68 @@ fn client_to_global(hwnd: *mut c_void, lparam: isize) -> Option<(i32, i32)> {
     Some((pt.x, pt.y))
 }
 
-/// WM_DPICHANGED: wparam = dpi nuevo. El worker de paint levanta la
-/// escala nueva (GetDpiForWindow por ciclo) y fuerza el tamaño canónico
-/// (tamaño lógico × escala) manteniendo el centro del octágono (paso
-/// 3.5 del worker): sin SetWindowPos en el hilo de mensajes durante la
-/// reconfiguración (AppHangB1, WER 2026-10-21 10:56).
+/// WM_DPICHANGED: wparam = MAKELPARAM(dpi_nuevo, dpi_viejo). Es la señal
+/// de que Windows YA aplicó la nueva escala — a menudo SEGUNDOS después
+/// del hotplug, cuando GDI (EnumDisplayDevices/GetMonitorInfoW) todavía
+/// reporta la topología VIEJA. Por eso:
+/// 1) pasa la escala nueva como hint al worker de paint (resize canónico +
+///    chequeo off-screen inmediatos; el worker es el único que hace
+///    SetWindowPos — AppHangB1, WER 2026-10-21 10:56);
+/// 2) si la escala cambió respecto del último DPICHANGED procesado,
+///    re-dispara el ajuste completo de display (hilo efímero, serializado
+///    con DISP_BUSY): si GDI ya es fresco, mueve el gadget a la posición
+///    recordada del monitor nuevo;
+/// 3) registra el instante del evento (LAST_WM_DPI_MS): `wm_dpi_fresh` lo
+///    usa como puerta de escala para no actuar con GDI stale.
+static LAST_DPICHANGED_DPI: AtomicU32 = AtomicU32::new(0);
+/// Instante (ms desde la época) del último WM_DPICHANGED procesado.
+static LAST_WM_DPI_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Escala reportada por el último WM_DPICHANGED, si tiene menos de
+/// `max_age_ms` de antigüedad. Es la señal más fresca y fiable tras un
+/// hotplug: GDI (EnumDisplayDevices/GetMonitorInfoW/GetDpiForMonitor) puede
+/// tardar hasta ~15–20 s en reflejar el monitor nuevo. Se usa como PUERTA
+/// DE ESCALA: una muestra de GDI cuya escala contradice este valor es STALE
+/// y no debe usarse para mover el gadget ni para escribir la memoria por
+/// monitor.
+pub fn wm_dpi_fresh(max_age_ms: u64) -> Option<f32> {
+    let dpi = LAST_DPICHANGED_DPI.load(Ordering::Relaxed);
+    if dpi == 0 {
+        return None;
+    }
+    let age = crate::now_ms().saturating_sub(LAST_WM_DPI_MS.load(Ordering::Relaxed));
+    (age <= max_age_ms).then_some(dpi as f32 / 96.0)
+}
+
+/// Invalida el hint de WM_DPICHANGED (v6): un DPICHANGED ANTERIOR al último
+/// WM_DISPLAYCHANGE NO puede validar datos de GDI del swap nuevo — se
+/// observó en el log que uno de hace 7–15 s abría la puerta de escala y se
+/// actuaba con una muestra stale del mundo viejo (el gadget quedaba con el
+/// tamaño del monitor anterior). Solo un DPICHANGED POSTERIOR al último
+/// cambio de display cuenta como fresco; por eso se llama desde el brazo
+/// WM_DISPLAYCHANGE, antes de que cualquier DPICHANGED posterior se
+/// procese.
+pub fn wm_hint_invalidate() {
+    LAST_WM_DPI_MS.store(0, Ordering::Relaxed);
+}
+
 fn on_dpi_changed(hwnd: *mut c_void, wparam: usize) {
-    if wparam == 0 {
+    let new_dpi = (wparam & 0xFFFF) as u32;
+    if new_dpi == 0 {
         return;
     }
-    crate::slog(49, &format!("gadget_dpichanged dpi={}", wparam));
+    crate::slog(49, &format!("gadget_dpichanged dpi={}", new_dpi));
+    LAST_WM_DPI_MS.store(crate::now_ms(), Ordering::Relaxed);
     let _ = hwnd;
-    mark_dirty();
+    // (1) Escala nueva autoritativa para el worker de paint.
+    request_geometry_check(Some(new_dpi as f32 / 96.0));
+    // (2) ¿Escala distinta a la última procesada? Re-evaluar todo: el
+    //     estado con el que se actuó en el último WM_DISPLAYCHANGE puede
+    //     ser GDI stale. Los duplicados consecutivos no re-disparan nada.
+    let prev = LAST_DPICHANGED_DPI.swap(new_dpi, Ordering::Relaxed);
+    if prev != new_dpi {
+        crate::on_display_change();
+    }
 }
 
 unsafe extern "system" fn gadget_wndproc(
@@ -797,6 +984,29 @@ unsafe extern "system" fn gadget_wndproc(
                                 ((wr.left as f32) / s).round() as i64,
                                 ((wr.top as f32) / s).round() as i64,
                             ]);
+                            // Memoria por monitor: posición relativa al
+                            // monitor donde quedó (÷ escala de ese monitor).
+                            let mon =
+                                w::MonitorFromWindow(a.gadget.hwnd, w::MONITOR_DEFAULTTONEAREST);
+                            let mut mi: w::MONITORINFO = std::mem::zeroed();
+                            mi.cbSize = std::mem::size_of::<w::MONITORINFO>() as u32;
+                            if w::GetMonitorInfoW(mon, &mut mi) != 0 {
+                                let device = w::from_wchar(&mi.szDevice);
+                                let id = crate::hdr::monitor_id_for_device(&device);
+                                // v6: clave compuesta "id|escala%": los
+                                // monitores del usuario comparten el mismo
+                                // ID PnP pero escalas distintas (100% vs
+                                // 200%), así que el id solo no distingue a
+                                // cuál corresponde la posición.
+                                a.cfg.monitor_mem.insert(
+                                    crate::mem_key(&id, s),
+                                    [
+                                        (((wr.left - mi.rcMonitor.left) as f32) / s).round() as i64,
+                                        (((wr.top - mi.rcMonitor.top) as f32) / s).round() as i64,
+                                    ],
+                                );
+                                a.monitor_id = id;
+                            }
                             crate::config::save(&a.cfg);
                         }
                         false

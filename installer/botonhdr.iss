@@ -1,10 +1,10 @@
 ; =====================================================================
-;  BotonHDR 1.2 — Script de instalador (Inno Setup 6)
+;  BotonHDR 1.3 — Script de instalador (Inno Setup 6)
 ;
 ;  Para compilar (desde la raíz del proyecto, con Inno Setup 6 instalado):
 ;    "<ruta de Inno Setup 6>\ISCC.exe" installer\botonhdr.iss
 ;
-;  Salida: installer\output\BotonHDR-Setup-1.2.exe
+;  Salida: installer\output\BotonHDR-Setup-1.3.exe
 ;
 ;  Comportamiento:
 ;  - Instala en C:\Program Files\BotonHDR (pide elevar permisos, UAC).
@@ -19,7 +19,7 @@
 ; =====================================================================
 
 #define MyAppName "BotonHDR"
-#define MyAppVersion "1.2"
+#define MyAppVersion "1.3"
 #define MyAppPublisher "kalipso-11"
 #define MyAppExeName "BotonHDR.exe"
 

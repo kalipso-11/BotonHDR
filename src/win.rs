@@ -233,17 +233,18 @@ pub struct WNDCLASSEXW {
     pub hIconSm: *mut c_void,
 }
 
-/// MONITORINFO (cbSize=32).
+/// MONITORINFO (cbSize=104, incluye `szDevice` = nombre GDI del monitor).
 #[repr(C)]
 pub struct MONITORINFO {
     pub cbSize: u32,
     pub rcMonitor: RECT,
     pub rcWork: RECT,
     pub dwFlags: u32,
+    pub szDevice: [u16; 32],
 }
 
 const _: () = {
-    assert!(core::mem::size_of::<MONITORINFO>() == 40); // x64: 4+16+16+4
+    assert!(core::mem::size_of::<MONITORINFO>() == 104); // x64: 4+16+16+4+64
 };
 
 #[repr(C)]
@@ -678,10 +679,41 @@ extern "system" {
     pub fn MonitorFromWindow(hwnd: *mut c_void, dwflags: u32) -> *mut c_void;
     pub fn MonitorFromPoint(pt: POINT, dwflags: u32) -> *mut c_void;
     pub fn GetMonitorInfoW(hmonitor: *mut c_void, lpmi: *mut MONITORINFO) -> i32;
+    pub fn EnumDisplayMonitors(
+        hdc: *mut c_void,
+        lprcClip: *const RECT,
+        lpfnEnum: MonEnumProc,
+        dwData: isize,
+    ) -> i32;
 }
 
+/// Callback de EnumDisplayMonitors (uno por monitor conectado).
+pub type MonEnumProc = unsafe extern "system" fn(
+    hmonitor: *mut c_void,
+    hdc: *mut c_void,
+    lprcMonitor: *mut RECT,
+    dwData: isize,
+) -> i32;
+
+
 pub const MONITOR_DEFAULTTONEAREST: u32 = 2;
+pub const MONITOR_DEFAULTTOPRIMARY: u32 = 1;
 pub const MONITORINFOF_PRIMARY: u32 = 1;
+
+// ---------------------------------------------------------------------------
+// shcore: DPI por monitor (con per-monitor awareness v2)
+// ---------------------------------------------------------------------------
+#[link(name = "shcore")]
+extern "system" {
+    pub fn GetDpiForMonitor(
+        hmonitor: *mut c_void,
+        dpi_type: u32,
+        dpi_x: *mut u32,
+        dpi_y: *mut u32,
+    ) -> i32;
+}
+
+pub const MDT_EFFECTIVE_DPI: u32 = 0;
 
 // ---------------------------------------------------------------------------
 // ntdll: RtlGetVersion (no miente, a diferencia de GetVersionEx)

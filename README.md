@@ -12,6 +12,9 @@ state of the main monitor and lets you toggle it with a click.
   - Always **behind the windows** (only visible when looking at the desktop).
   - **Draggable** to anywhere (the position is saved); it can be moved almost
     to the top of the screen.
+  - **Per-monitor memory**: remembers its position on each monitor; when the
+    primary monitor changes, the gadget moves back to where you left it, at
+    that monitor's scale.
   - **Left click**: toggles HDR ↔ SDR.
   - **Hover**: hand cursor.
   - Sizes: **Small 80×100 / Medium 96×120 / Large 120×150 / Huge 160×200**.
@@ -105,6 +108,8 @@ Gadget de escritorio al fondo + icono en la bandeja de sistema que muestra el es
   - Siempre **detrás de las ventanas** (solo se ve mirando el escritorio).
   - **Arrastrable** a cualquier lado (la posición se guarda); se lo puede llevar
     casi hasta el tope de la pantalla.
+  - **Memoria por monitor**: recuerda su posición en cada monitor; al cambiar
+    de monitor primario vuelve a donde lo dejaste, con la escala de ese monitor.
   - **Click izquierdo**: alterna HDR ↔ SDR.
   - **Hover**: cursor de "manito".
   - Tamaños: **Chico 80×100 / Medio 96×120 / Grande 120×150 / Enorme 160×200**.

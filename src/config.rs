@@ -2,6 +2,7 @@
 //! (keys estables, migraciones one-shot v2 y v3, tolerancia a BOM).
 
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 const APP_NAME: &str = "BotonHDR2";
@@ -19,6 +20,12 @@ pub struct Cfg {
     /// Solo afecta los textos mostrados, nunca los valores de config.
     pub language: String,
     pub position: Option<[i64; 2]>,
+    /// Memoria por monitor: ID de monitor → esquina sup-izq del gadget
+    /// relativa a la sup-izq de ESE monitor (px lógicos = físicos ÷
+    /// escala del monitor). Se restaura cuando el monitor primario
+    /// cambia (el gadget vuelve a donde lo dejaste en ese monitor).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub monitor_mem: BTreeMap<String, [i64; 2]>, 
     /// Estado bloqueado ("HDR"/"SDR") mientras está activo el menú
     /// "Bloquear SDR/HDR" (None = sin bloqueo).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -27,6 +34,11 @@ pub struct Cfg {
     pub migrated_v2: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub migrated_v3: Option<i32>,
+    /// v7 (2026-10-27): se purgaron las claves de memoria chiméricas
+    /// (id|escala imposible) escritas por el bug pre-v7. La migración
+    /// corre en main.rs (necesita enumerar monitores en vivo).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub migrated_v7: Option<i32>,
 }
 
 impl Default for Cfg {
@@ -38,9 +50,11 @@ impl Default for Cfg {
             size: "Grande".into(), // Chico / Medio / Grande / Enorme
             language: "en".into(), // instalación nueva en inglés
             position: None,
+            monitor_mem: BTreeMap::new(),
             hdr_lock: None,
             migrated_v2: None,
             migrated_v3: None,
+            migrated_v7: None,
         }
     }
 }
@@ -117,10 +131,23 @@ pub fn load() -> Cfg {
             data.position = Some([x, y]);
         }
     }
+    if let Some(objm) = obj.get("monitor_mem").and_then(|v| v.as_object()) {
+        for (k, v) in objm {
+            if let (Some(x), Some(y)) = (
+                v.get(0).and_then(|v| v.as_i64()),
+                v.get(1).and_then(|v| v.as_i64()),
+            ) {
+                data.monitor_mem.insert(k.clone(), [x, y]);
+            }
+        }
+    }
     if let Some(v) = obj.get("hdr_lock").and_then(|v| v.as_str()) {
         if v == "HDR" || v == "SDR" {
             data.hdr_lock = Some(v.to_string());
         }
+    }
+    if let Some(v) = obj.get("migrated_v7").and_then(|v| v.as_i64()) {
+        data.migrated_v7 = Some(v as i32);
     }
 
     // ---- migración v2 (legacy: Mini→Medio, opacidades 25/50/75) --------

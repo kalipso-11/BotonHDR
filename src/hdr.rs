@@ -475,6 +475,48 @@ fn monitor_devices() -> Vec<(String, u32)> {
     out
 }
 
+/// ID estable de un monitor por su nombre GDI (`\\.\DISPLAYn`): el
+/// DeviceID PnP completo (`MONITOR\{hwid}\{guid}\{inst}`) si se resuelve
+/// — único por panel físico aunque haya dos paneles del mismo modelo —;
+/// si no, el propio nombre GDI (pantallas virtuales). Lo usa la memoria
+/// por monitor del gadget.
+pub fn monitor_id_for_device(device: &str) -> String {
+    let mut found = String::new();
+    let dev_ci = device.to_ascii_lowercase();
+    unsafe {
+        for n in 1..9 {
+            let display = utf16(&format!(r"\\.\DISPLAY{n}"));
+            for i in 0..8 {
+                let mut d: DISPLAY_DEVICEW = core::mem::zeroed();
+                d.cb = core::mem::size_of::<DISPLAY_DEVICEW>() as u32;
+                if crate::win::EnumDisplayDevicesW(display.as_ptr(), i, &mut d, 0) == 0 {
+                    break;
+                }
+                // El nombre puede ser el GDI puro (`\\.\DISPLAY1`) o con
+                // sufijo de monitor (`\\.\DISPLAY1\Monitor0`): se hace match
+                // por prefix (con `\\` para no chocar DISPLAY1/DISPLAY10).
+                let name = from_wchar(&d.DeviceName).to_ascii_lowercase();
+                if name != dev_ci && !name.starts_with(&format!("{}\\", dev_ci)) {
+                    continue;
+                }
+                let dev_id = from_wchar(&d.DeviceID);
+                if dev_id.starts_with("MONITOR\\") {
+                    found = dev_id;
+                    break;
+                }
+            }
+            if !found.is_empty() {
+                break;
+            }
+        }
+    }
+    if found.is_empty() {
+        device.to_string()
+    } else {
+        found
+    }
+}
+
 /// Hwid PnP del monitor activo.
 fn active_hwid() -> Option<String> {
     let devs = monitor_devices();
