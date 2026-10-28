@@ -44,9 +44,7 @@ state of the main monitor and lets you toggle it with a click.
 
 ## Usage
 ### Executable
-```
-target\release\BotonHDR.exe
-```
+Download the latest installer from https://github.com/kalipso-11/BotonHDR/releases.
 Requirements: Windows 10/11 x64. No dependencies.
 
 ### Building from source
@@ -141,9 +139,7 @@ Gadget de escritorio al fondo + icono en la bandeja de sistema que muestra el es
 
 ## Uso
 ### Ejecutable
-```
-target\release\BotonHDR.exe
-```
+Bajá el último instalador desde https://github.com/kalipso-11/BotonHDR/releases.
 Requisitos: Windows 10/11 x64. Sin dependencias.
 
 ### Compilar desde fuente
